@@ -141,6 +141,80 @@ func TestWalk(t *testing.T) {
 	})
 }
 
+func TestWalkHandlesPointerCycles(t *testing.T) {
+	type Node struct {
+		Value string
+		Next  *Node
+	}
+
+	collectStrings := func(input any) []string {
+		var got []string
+
+		walk(input, func(value string) {
+			got = append(got, value)
+		})
+
+		return got
+	}
+
+	t.Run("direct self reference", func(t *testing.T) {
+		node := &Node{Value: "Alice"}
+		node.Next = node
+
+		got := collectStrings(node)
+		want := []string{"Alice"}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("indirect cycle between two nodes", func(t *testing.T) {
+		alice := &Node{Value: "Alice"}
+		bob := &Node{Value: "Bob"}
+
+		alice.Next = bob
+		bob.Next = alice
+
+		got := collectStrings(alice)
+		want := []string{"Alice", "Bob"}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("nil pointer", func(t *testing.T) {
+		var node *Node
+
+		got := collectStrings(node)
+
+		if len(got) != 0 {
+			t.Errorf("got %v, want no strings", got)
+		}
+	})
+
+	t.Run("shared pointer is not a cycle", func(t *testing.T) {
+		type Pair struct {
+			Left  *Node
+			Right *Node
+		}
+
+		shared := &Node{Value: "Shared"}
+		pair := Pair{
+			Left:  shared,
+			Right: shared,
+		}
+
+		got := collectStrings(pair)
+		want := []string{"Shared", "Shared"}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
 func assertContains(t testing.TB, haystack []string, needle string) {
 	t.Helper()
 	contains := false

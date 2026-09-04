@@ -2,46 +2,92 @@ package reflection
 
 import "reflect"
 
-func walk(x any, fn func(input string)) {
-	val := getValue(x)
-
-	walkValue := func(value reflect.Value) {
-		walk(value.Interface(), fn)
-	}
-
-	switch val.Kind() {
-	case reflect.String:
-		fn(val.String())
-	case reflect.Struct:
-		for i := 0; i < val.NumField(); i++ {
-			walkValue(val.Field(i))
-		}
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < val.Len(); i++ {
-			walkValue(val.Index(i))
-		}
-	case reflect.Map:
-		for _, key := range val.MapKeys() {
-			walkValue(val.MapIndex(key))
-		}
-	case reflect.Chan:
-		for v, ok := val.Recv(); ok; v, ok = val.Recv() {
-			walkValue(v)
-		}
-	case reflect.Func:
-		valFnResult := val.Call(nil)
-		for _, res := range valFnResult {
-			walkValue(res)
-		}
-	}
+type pointerVisit struct {
+	typ     reflect.Type
+	address uintptr
 }
 
-func getValue(x any) reflect.Value {
-	val := reflect.ValueOf(x)
+func walk(x any, fn func(input string)) {
+	onPath := make(map[pointerVisit]struct{})
 
-	if val.Kind() == reflect.Pointer {
-		val = val.Elem()
+	var walkValue func(reflect.Value)
+
+	walkValue = func(value reflect.Value) {
+		if !value.IsValid() {
+			return
+		}
+
+		if value.Kind() == reflect.Interface {
+			if value.IsNil() {
+				return
+			}
+
+			walkValue(value.Elem())
+			return
+		}
+
+		if value.Kind() == reflect.Pointer {
+			if value.IsNil() {
+				return
+			}
+
+			current := pointerVisit{
+				typ:     value.Type(),
+				address: value.Pointer(),
+			}
+
+			if _, found := onPath[current]; found {
+				return
+			}
+
+			onPath[current] = struct{}{}
+
+			defer delete(onPath, current)
+
+			walkValue(value.Elem())
+			return
+		}
+
+		switch value.Kind() {
+		case reflect.String:
+			fn(value.String())
+
+		case reflect.Struct:
+			for i := 0; i < value.NumField(); i++ {
+				walkValue(value.Field(i))
+			}
+
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < value.Len(); i++ {
+				walkValue(value.Index(i))
+			}
+
+		case reflect.Map:
+			for _, key := range value.MapKeys() {
+				walkValue(value.MapIndex(key))
+			}
+
+		case reflect.Chan:
+			for {
+				received, ok := value.Recv()
+				if !ok {
+					return
+				}
+
+				walkValue(received)
+			}
+
+		case reflect.Func:
+			if value.IsNil() || value.Type().NumIn() != 0 {
+				return
+			}
+
+			results := value.Call(nil)
+			for _, result := range results {
+				walkValue(result)
+			}
+		}
 	}
 
-	return val
+	walkValue(reflect.ValueOf(x))
 }
