@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -18,18 +20,17 @@ func (s *SpyStore) Fetch(ctx context.Context) (string, error) {
 	data := make(chan string, 1)
 
 	go func() {
-		var result string
+		var result strings.Builder
 		for _, c := range s.response {
 			select {
 			case <-ctx.Done():
 				log.Println("spy store got cancelled")
 				return
-			default:
-				time.Sleep(10 * time.Millisecond)
-				result += string(c)
+			case <-time.After(10 * time.Millisecond):
+				result.WriteRune(c)
 			}
 		}
-		data <- result
+		data <- result.String()
 	}()
 
 	select {
@@ -76,21 +77,23 @@ func TestServer(t *testing.T) {
 	})
 
 	t.Run("tells store to cancel work if request is cancelled", func(t *testing.T) {
-		store := &SpyStore{response: data}
-		svr := Server(store)
+		synctest.Test(t, func(t *testing.T) {
+			store := &SpyStore{response: data}
+			svr := Server(store)
 
-		request := httptest.NewRequest(http.MethodGet, "/", nil)
+			request := httptest.NewRequest(http.MethodGet, "/", nil)
 
-		cancellingCtx, cancel := context.WithCancel(request.Context())
-		time.AfterFunc(5*time.Millisecond, cancel)
-		request = request.WithContext(cancellingCtx)
+			cancellingCtx, cancel := context.WithCancel(request.Context())
+			time.AfterFunc(5*time.Millisecond, cancel)
+			request = request.WithContext(cancellingCtx)
 
-		response := &SpyResponseWriter{}
+			response := &SpyResponseWriter{}
 
-		svr.ServeHTTP(response, request)
+			svr.ServeHTTP(response, request)
 
-		if response.written {
-			t.Error("a response should not have been written")
-		}
+			if response.written {
+				t.Error("a response should not have been written")
+			}
+		})
 	})
 }
