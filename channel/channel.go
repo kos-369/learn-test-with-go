@@ -1,11 +1,11 @@
-// Package channel contains a minimal background worker example.
+// Package channel contains a small background worker example.
 package channel
 
-// Worker receives one task, processes it, and sends back the result.
+// Worker processes tasks until the tasks channel is closed.
 func Worker(tasks chan string, completed chan string) {
-	task := <-tasks
+	for task := range tasks {
+		completed <- "completed: " + task
+	}
 
-	result := "completed: " + task
-
-	completed <- result
+	close(completed)
 }
