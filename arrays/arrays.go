@@ -60,3 +60,12 @@ func applyTransaction(a Account, transaction Transaction) Account {
 	}
 	return a
 }
+
+func Find[A any](items []A, predicate func(A) bool) (value A, found bool) {
+	for _, v := range items {
+		if predicate(v) {
+			return v, true
+		}
+	}
+	return
+}
