@@ -10,7 +10,7 @@ import (
 
 func TestRecordingWinsAndRetrievingThem(t *testing.T) {
 	store := NewInMemoryPlayerStore()
-	server := PlayerServer{store}
+	server := NewPlayerServer(store)
 	player := "Pepepr"
 
 	server.ServeHTTP(httptest.NewRecorder(), newPostWinRequest(player))
@@ -26,7 +26,7 @@ func TestRecordingWinsAndRetrievingThem(t *testing.T) {
 
 func TestConcurrentRecordingWins(t *testing.T) {
 	store := NewInMemoryPlayerStore()
-	server := PlayerServer{store}
+	server := NewPlayerServer(store)
 	player := "Pepper"
 	wantedWins := 1000
 
