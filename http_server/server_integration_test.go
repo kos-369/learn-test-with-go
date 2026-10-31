@@ -9,7 +9,14 @@ import (
 )
 
 func TestRecordingWinsAndRetrievingThem(t *testing.T) {
-	store := NewInMemoryPlayerStore()
+	database, removeFile := createTempFile(t, `[]`)
+	defer removeFile()
+	store, err := NewFileSystemPlayerStore(database)
+
+	if err != nil {
+		assertNotError(t, err)
+	}
+
 	server := NewPlayerServer(store)
 	player := "Pepper"
 
@@ -39,7 +46,14 @@ func TestRecordingWinsAndRetrievingThem(t *testing.T) {
 }
 
 func TestConcurrentRecordingWins(t *testing.T) {
-	store := NewInMemoryPlayerStore()
+	database, removeFile := createTempFile(t, `[]`)
+	defer removeFile()
+	store, err := NewFileSystemPlayerStore(database)
+
+	if err != nil {
+		assertNotError(t, err)
+	}
+
 	server := NewPlayerServer(store)
 	player := "Pepper"
 	wantedWins := 1000
