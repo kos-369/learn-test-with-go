@@ -6,9 +6,11 @@ import (
 	"io"
 	"os"
 	"sort"
+	"sync"
 )
 
 type FileSystemPlayerStore struct {
+	mu       sync.RWMutex
 	database *json.Encoder
 	league   League
 }
@@ -31,13 +33,18 @@ func NewFileSystemPlayerStore(file *os.File) (*FileSystemPlayerStore, error) {
 }
 
 func (f *FileSystemPlayerStore) GetLeague() League {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	sort.Slice(f.league, func(i, j int) bool {
 		return f.league[i].Wins > f.league[j].Wins
 	})
-	return f.league
+
+	return append(League{}, f.league...)
 }
 
 func (f *FileSystemPlayerStore) GetPlayerScore(name string) int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	player := f.league.Find(name)
 
 	if player != nil {
@@ -48,6 +55,8 @@ func (f *FileSystemPlayerStore) GetPlayerScore(name string) int {
 }
 
 func (f *FileSystemPlayerStore) RecordWin(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	player := f.league.Find(name)
 
 	if player != nil {
