@@ -7,7 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 var dummyGame = &GameSpy{}
@@ -127,6 +132,52 @@ func TestGame(t *testing.T) {
 
 		assertStatus(t, response, http.StatusOK)
 	})
+
+	t.Run("GET /ws without a websocket upgrade returns 400", func(t *testing.T) {
+		server := mustMakePlayerServer(t, &StubPlayerStore{}, dummyGame)
+
+		request, _ := http.NewRequest(http.MethodGet, "/ws", nil)
+		response := httptest.NewRecorder()
+
+		server.ServeHTTP(response, request)
+
+		assertStatus(t, response, http.StatusBadRequest)
+	})
+}
+
+func TestPlayerServerWSWrite(t *testing.T) {
+	const writers = 50
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := newPlayerServerWS(w, r)
+		if err != nil {
+			t.Errorf("could not upgrade connection %v", err)
+			return
+		}
+		defer ws.Close()
+
+		var wg sync.WaitGroup
+		for range writers {
+			wg.Go(func() {
+				ws.Write([]byte("Blind is now 100"))
+			})
+		}
+		wg.Wait()
+	}))
+	defer server.Close()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("could not open a ws connection %v", err)
+	}
+	defer ws.Close()
+
+	ws.SetReadDeadline(time.Now().Add(time.Second))
+	for i := range writers {
+		if _, _, err := ws.ReadMessage(); err != nil {
+			t.Fatalf("could not read message %d %v", i, err)
+		}
+	}
 }
 
 func assertStatus(t testing.TB, got *httptest.ResponseRecorder, want int) {

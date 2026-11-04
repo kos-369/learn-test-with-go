@@ -6,8 +6,8 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -85,27 +85,31 @@ var wsUpgrader = websocket.Upgrader{
 
 type playerServerWS struct {
 	*websocket.Conn
+	writeMu sync.Mutex
 }
 
-func newPlayerServerWS(w http.ResponseWriter, r *http.Request) *playerServerWS {
+func newPlayerServerWS(w http.ResponseWriter, r *http.Request) (*playerServerWS, error) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 
 	if err != nil {
-		log.Printf("problem upgrading connection to WebSockets %v\n", err)
+		return nil, fmt.Errorf("problem upgrading connection to WebSockets %v", err)
 	}
 
-	return &playerServerWS{conn}
+	return &playerServerWS{Conn: conn}, nil
 }
 
-func (w *playerServerWS) WaitForMsg() string {
+func (w *playerServerWS) WaitForMsg() (string, error) {
 	_, msg, err := w.ReadMessage()
 	if err != nil {
-		log.Printf("error reading from websocket %v\n", err)
+		return "", fmt.Errorf("error reading from websocket %v", err)
 	}
-	return string(msg)
+	return string(msg), nil
 }
 
 func (w *playerServerWS) Write(p []byte) (n int, err error) {
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+
 	err = w.WriteMessage(websocket.TextMessage, p)
 
 	if err != nil {
@@ -116,13 +120,40 @@ func (w *playerServerWS) Write(p []byte) (n int, err error) {
 }
 
 func (p *PlayerServer) webSocket(w http.ResponseWriter, r *http.Request) {
-	ws := newPlayerServerWS(w, r)
+	ws, err := newPlayerServerWS(w, r)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer ws.Close()
 
-	numberOfPlayersMsg := ws.WaitForMsg()
-	numberOfPlayers, _ := strconv.Atoi(numberOfPlayersMsg)
-	p.playGame.Start(numberOfPlayers, ws)
+	numberOfPlayersMsg, err := ws.WaitForMsg()
+	if err != nil {
+		log.Println(err)
+		return
+	}
 
-	winner := ws.WaitForMsg()
+	numberOfPlayers, err := parseNumberOfPlayers(numberOfPlayersMsg)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	stop := p.playGame.Start(numberOfPlayers, ws)
+	defer stop()
+
+	winnerMsg, err := ws.WaitForMsg()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	winner := strings.TrimSpace(winnerMsg)
+	if winner == "" {
+		log.Println("no winner was sent over websocket, so the result was not recorded")
+		return
+	}
+
 	p.playGame.Finish(winner)
 }
 
