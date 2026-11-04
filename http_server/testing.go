@@ -2,6 +2,8 @@ package poker
 
 import (
 	"fmt"
+	"io"
+	"sync"
 	"testing"
 	"time"
 )
@@ -50,6 +52,56 @@ type SpyBlindAlerter struct {
 	Alerts []ScheduledAlert
 }
 
-func (s *SpyBlindAlerter) ScheduleAlertAt(at time.Duration, amount int) {
+func (s *SpyBlindAlerter) ScheduleAlertAt(at time.Duration, amount int, to io.Writer) {
 	s.Alerts = append(s.Alerts, ScheduledAlert{at, amount})
+}
+
+type GameSpy struct {
+	mu sync.Mutex
+
+	StartCalled     bool
+	StartCalledWith int
+	BlindAlert      []byte
+
+	FinishedCalled   bool
+	FinishCalledWith string
+}
+
+func (g *GameSpy) Start(numberOfPlayers int, out io.Writer) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.StartCalled = true
+	g.StartCalledWith = numberOfPlayers
+	out.Write(g.BlindAlert)
+}
+
+func (g *GameSpy) Finish(winner string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.FinishedCalled = true
+	g.FinishCalledWith = winner
+}
+
+func (g *GameSpy) WasStarted() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.StartCalled
+}
+
+func (g *GameSpy) StartedWith() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.StartCalledWith
+}
+
+func (g *GameSpy) WasFinished() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.FinishedCalled
+}
+
+func (g *GameSpy) FinishedWith() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.FinishCalledWith
 }

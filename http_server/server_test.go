@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+var dummyGame = &GameSpy{}
+
 func TestGETPlayers(t *testing.T) {
 	store := StubPlayerStore{
 		map[string]int{
@@ -19,7 +21,7 @@ func TestGETPlayers(t *testing.T) {
 		nil,
 		nil,
 	}
-	server := NewPlayerServer(&store)
+	server := mustMakePlayerServer(t, &store, dummyGame)
 
 	t.Run("returns Pepper's score", func(t *testing.T) {
 		request := newGetScoreRequest("Pepper")
@@ -57,7 +59,7 @@ func TestStoreWins(t *testing.T) {
 		nil,
 		nil,
 	}
-	server := NewPlayerServer(&store)
+	server := mustMakePlayerServer(t, &store, dummyGame)
 
 	t.Run("it returns accepted on POST", func(t *testing.T) {
 		player := "Pepper"
@@ -74,7 +76,7 @@ func TestStoreWins(t *testing.T) {
 
 func TestLeague(t *testing.T) {
 	store := StubPlayerStore{}
-	server := NewPlayerServer(&store)
+	server := mustMakePlayerServer(t, &store, dummyGame)
 
 	t.Run("it returns 200 on /league", func(t *testing.T) {
 		request, _ := http.NewRequest(http.MethodGet, "/league", nil)
@@ -100,7 +102,7 @@ func TestLeague(t *testing.T) {
 		}
 
 		store := StubPlayerStore{nil, nil, wantedLeague}
-		server := NewPlayerServer(&store)
+		server := mustMakePlayerServer(t, &store, dummyGame)
 
 		request, _ := http.NewRequest(http.MethodGet, "/league", nil)
 		response := httptest.NewRecorder()
@@ -116,7 +118,7 @@ func TestLeague(t *testing.T) {
 
 func TestGame(t *testing.T) {
 	t.Run("GET /game returns 200", func(t *testing.T) {
-		server := NewPlayerServer(&StubPlayerStore{})
+		server := mustMakePlayerServer(t, &StubPlayerStore{}, dummyGame)
 
 		request := newGameRequest()
 		response := httptest.NewRecorder()
@@ -183,4 +185,13 @@ func assertContentType(t testing.TB, response *httptest.ResponseRecorder, want s
 func newGameRequest() *http.Request {
 	req, _ := http.NewRequest(http.MethodGet, "/game", nil)
 	return req
+}
+
+func mustMakePlayerServer(t *testing.T, store PlayerStore, game Game) *PlayerServer {
+	t.Helper()
+	server, err := NewPlayerServer(store, game)
+	if err != nil {
+		t.Fatal("problem creating player server", err)
+	}
+	return server
 }
